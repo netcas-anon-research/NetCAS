@@ -6,6 +6,18 @@ if [ "$EUID" -ne 0 ]; then
     exit 1
 fi
 
+# Function to detect if MF variant is currently running
+detect_mf_variant() {
+    # Try to stop multi-factor monitor - if it works, MF variant is running
+    if casadm -N >/dev/null 2>&1; then
+        echo "MF variant detected - multi-factor monitor was running"
+        return 0
+    else
+        echo "Non-MF variant detected - no multi-factor monitor was running"
+        return 1
+    fi
+}
+
 # Function to find available NVMe devices
 find_nvme_device() {
     # Look for NVMe devices, prefer nvme2n1 if available
@@ -26,6 +38,33 @@ find_nvme_device() {
         echo ""
     fi
 }
+
+# Auto-detect if MF variant is currently running
+if detect_mf_variant; then
+    echo "MF variant detected - stopping multi-factor monitor and switching cache mode..."
+    
+    # Stop multi-factor monitor (already done in detection, but do it again for clarity)
+    echo "Stopping multi-factor monitor..."
+    casadm -N
+    if [ $? -eq 0 ]; then
+        echo "Multi-factor monitor stopped successfully"
+    else
+        echo "Failed to stop multi-factor monitor"
+        exit 1
+    fi
+
+    # Switch cache to Pass-Through mode
+    echo "Switching cache to Pass-Through mode..."
+    casadm -Q -i 1 -c pt
+    if [ $? -eq 0 ]; then
+        echo "Cache switched to Pass-Through mode successfully"
+    else
+        echo "Failed to switch cache to Pass-Through mode or no cache instance found"
+        exit 1
+    fi
+else
+    echo "Non-MF variant detected - skipping multi-factor monitor operations"
+fi
 
 # Verify if a cache instance exists
 CACHE_INSTANCE=$(casadm -L | grep "^cache" | awk '{print $2}')

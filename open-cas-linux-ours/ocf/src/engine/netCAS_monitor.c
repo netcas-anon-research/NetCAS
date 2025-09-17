@@ -10,6 +10,15 @@ netCAS monitor module
 #include <linux/kernel.h>
 #include <linux/atomic.h>
 
+// Define UINT64_MAX if not available
+#ifndef UINT64_MAX
+#define UINT64_MAX ((uint64_t)-1)
+#endif
+
+// Use larger integer types for overflow-safe calculations
+typedef unsigned long long uint128_t;
+#define UINT128_MAX ((uint128_t) - 1)
+
 // Constants
 const uint64_t REQUEST_BLOCK_SIZE = 64;
 static const char *CAS_STAT_FILE = "/sys/block/cas1-1/stat";
@@ -145,7 +154,26 @@ uint64_t measure_iops_using_disk_stats(uint64_t elapsed_time /* ms */)
 
     /* Calculate IOPS = (reads + writes) / seconds */
     if (elapsed_time > 0)
-        iops = ((delta_reads + delta_writes) * 1000) / elapsed_time;
+    {
+        uint64_t total_ops = delta_reads + delta_writes;
+
+        // Use larger integer type to prevent overflow during multiplication
+        uint128_t total_ops_128 = (uint128_t)total_ops;
+        uint128_t multiplication_result = total_ops_128 * 1000;
+
+        // Check if result fits in uint64_t
+        if (multiplication_result > UINT64_MAX)
+        {
+            // Set to maximum possible value
+            iops = UINT64_MAX;
+            printk(KERN_ERR "IOPS calculation would overflow, setting to UINT64_MAX (total_ops=%llu, elapsed_time=%llu)",
+                   total_ops, elapsed_time);
+        }
+        else
+        {
+            iops = (uint64_t)(multiplication_result / elapsed_time);
+        }
+    }
 
     return iops;
 }

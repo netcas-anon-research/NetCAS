@@ -1,0 +1,6 @@
+{
+    "files.associations": {
+        "engine_debug.h": "c",
+        "ocf_stats_priv.h": "c"
+    }
+}

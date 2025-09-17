@@ -1,0 +1,11 @@
+Category,Percentage,Samples,Top_Functions,Description,Absolute_CPU_%,Memory_Used_KB,Context_Switches_per_sec,Interrupts_per_sec,Block_Reads_kB_per_sec,Block_Writes_kB_per_sec
+Other,4.37%,359,acpi_processor_ffh_cstate_enter (116.79%); syscall (53.70%); default_wake_function (37.74%); env_mpool_new_f (29.17%); measure_performance (25.30%),Other operations,0.56%,,,,,
+Os,10.14%,369,do_syscall_64 (159.65%); do_IRQ (129.39%); __do_softirq (126.32%); irq_exit (117.85%); ret_from_intr (116.01%),"Operating system: scheduler, interrupts/softirq, syscalls, kernel services",1.31%,,,,,
+Fio,7.53%,60,aio_read (295.83%); io_submit_one (251.85%); __x64_sys_io_submit (202.99%); aio_complete_rw (58.12%); do_io_getevents (10.60%),FIO workload and I/O operations,0.97%,,,,,
+Block Io,34.55%,565,generic_make_request (448.82%); blkdev_direct_IO (435.36%); submit_bio (409.63%); generic_file_read_iter (388.95%); blkdev_read_iter (340.76%),Block-layer core (generic blk/bio/mq),4.45%,,,,,
+Pmem,6.12%,103,pmem_make_request (312.00%); pmem_do_bvec (280.92%); env_allocator_new (28.71%); get_user_pages_fast (19.30%); iov_iter_get_pages (18.02%),Persistent Memory and memory management operations,0.79%,,,,,
+Opencas,18.56%,712,ocf_volume_submit_io (201.97%); ocf_submit_volume_req_cmpl (168.05%); cas_bd_io_end (162.39%); cas_bd_io_end_callback (161.06%); ocf_core_volume_submit_io (158.64%),OpenCAS and netCAS operations,2.39%,,,,,
+Filesystem,0.12%,26,do_filp_open (13.73%),Filesystem and VFS operations,0.02%,,,,,
+Nvme,9.69%,234,__ib_process_cq (143.95%); ib_poll_handler (139.23%); blk_mq_end_request (135.86%); nvme_rdma_recv_done (135.19%); nvme_rdma_complete_rq (133.64%),"NVMe driver, NVMe-oF RDMA operations, and related kernel workers",1.25%,,,,,
+Idle,8.91%,69,cpuidle_enter_state (200.56%); cpuidle_enter (175.80%); call_cpuidle (149.76%); do_idle (134.68%); acpi_idle_do_entry (116.86%),CPU idle and power management,1.15%,,,,,
+System_Metrics,N/A,N/A,N/A,System-wide absolute metrics,12.87%,0,29905,74192,459674.68,0.00

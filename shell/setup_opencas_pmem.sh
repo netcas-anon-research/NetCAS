@@ -8,6 +8,9 @@ if [ "$EUID" -ne 0 ]; then
     exit 1
 fi
 
+# Get variant parameter (default to empty if not provided)
+VARIANT="${1:-}"
+
 # Verify PMEM device exists
 if [ ! -e /dev/pmem0 ]; then
     echo "PMEM device /dev/pmem0 not found"
@@ -26,6 +29,10 @@ echo "Found NVMe device at /dev/$device"
 echo "Stopping any existing cache instance..."
 casadm -S -i 1 2>/dev/null
 
+# Clean up any existing cas device files
+echo "Cleaning up existing cas device files..."
+rm -f /dev/cas1-1 2>/dev/null
+
 # Create new cache instance using PMEM
 echo "Creating new cache instance with PMEM..."
 if ! casadm -S -i 1 -d /dev/disk/by-id/pmem-9b05c62b-8b4a-4c2a-aec3-6f1b895fa861 -c wo -x 64 --force; then
@@ -41,20 +48,26 @@ if ! casadm -A -i 1 -j 1 -d /dev/disk/by-id/nvme-Linux_866827229c7923fb; then
     exit 1
 fi
 
-# # Start netCAS Thread
-# echo "Starting netCAS Thread..."
-# if ! sudo casadm -M -i 1 -j 1; then
-#     echo "Failed to start netCAS Thread"
-#     exit 1
-# fi
+# Only start netCAS Thread and change cache mode for MF variant
+if [ "$VARIANT" = "mf" ]; then
+    echo "MF variant detected - starting netCAS Thread and setting cache mode to mfwt..."
+    
+    # Start netCAS Thread
+    echo "Starting netCAS Thread..."
+    if ! sudo casadm -M -i 1 -j 1; then
+        echo "Failed to start netCAS Thread"
+        exit 1
+    fi
 
-# # Changing cache mode to mfcwt
-# echo "Changing cache mode to mfcwt..."
-# if ! sudo casadm -Q -i 1 -c mfwa --flush-cache yes; then
-#     echo "Failed to change cache mode"
-#     exit 1
-# fi
-
+    # Changing cache mode to mfwt
+    echo "Changing cache mode to mfwt..."
+    if ! sudo casadm -Q -i 1 -c mfwt --flush-cache yes; then
+        echo "Failed to change cache mode"
+        exit 1
+    fi
+else
+    echo "Non-MF variant detected - skipping netCAS Thread operations"
+fi
 
 # Verify setup
 echo "Verifying setup..."

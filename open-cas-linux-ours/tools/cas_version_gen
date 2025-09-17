@@ -25,7 +25,7 @@ error() {
 
 
 # Check if we're inside a git repository
-if [[ -d "$SOURCES_DIR/.git" ]] && which git &>/dev/null &&\
+if [[ (-d "$SOURCES_DIR/.git" || -f "$SOURCES_DIR/.git") ]] && which git &>/dev/null &&\
         (cd "$SOURCES_DIR" && git rev-parse --is-inside-work-tree &>/dev/null); then
     if [[ ! -r "$MANUAL_VERSION_INPUT" ]]; then
         error "can't read version input file '$MANUAL_VERSION_INPUT'"

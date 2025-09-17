@@ -1,0 +1,36 @@
+=== CPU Usage Comparison Report ===
+Date: 2025. 09. 17. (수) 11:41:36 KST
+Test Configuration:
+- Device: /dev/cas1-1
+- Block Size: 64k
+- IO Depth: 16
+- Runtime: 30 seconds
+- Iterations: 1
+
+=== netCAS Results ===
+Iteration 1:
+IOPS: 105447.225462
+Bandwidth (KB/s): 6748622
+Test completed at: 2025. 09. 17. (수) 11:35:17 KST
+
+
+=== openCAS Results ===
+Iteration 1:
+IOPS: 105548.608565
+Bandwidth (KB/s): 6755110
+Test completed at: 2025. 09. 17. (수) 11:38:23 KST
+
+
+=== MF Results ===
+Iteration 1:
+IOPS: 105480.553241
+Bandwidth (KB/s): 6750755
+Test completed at: 2025. 09. 17. (수) 11:41:29 KST
+
+
+=== Analysis Instructions ===
+1. Check perf reports in each iteration directory
+2. Compare system metrics (mpstat, iostat, vmstat) for total amounts
+3. Look for differences in CPU usage patterns
+4. Compare absolute CPU usage, memory usage, and block I/O totals
+5. Consider MF's background monitoring thread impact
