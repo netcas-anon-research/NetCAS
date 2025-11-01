@@ -13,9 +13,8 @@ netCAS extends OpenCAS to **adapt cache–backing split ratios at runtime**, ens
 
 **Key idea:**
 Instead of always hitting the cache, netCAS **splits each read I/O** between PMem and NVMe-oF according to:
-[
-\text{Optimal Split Ratio} = \frac{\text{IOPS}*{\text{cache}}}{\text{IOPS}*{\text{cache}} + \text{IOPS}_{\text{backing}}}
-]
+**Optimal Split Ratio** = IOPS_cache / (IOPS_cache + IOPS_backing)
+
 and dynamically adjusts it when RDMA bandwidth or latency degrades.
 
 ---
