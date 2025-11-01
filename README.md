@@ -1,108 +1,201 @@
-# netCAS
+# **netCAS**
 
-netCAS is a network-aware caching system based on OpenCAS (Open Cache Acceleration Software). This repository contains modifications to the OpenCAS Linux kernel module to support network-aware caching functionality.
+**netCAS (Network-aware Cache-Aware Splitting)** is a Linux kernel–level extension of [OpenCAS (Open Cache Acceleration Software)](https://github.com/Open-CAS/open-cas-linux) that enables **network-aware hybrid caching**.
+It dynamically distributes read operations between a **local persistent memory (PMem)** cache device and a **remote NVMe-oF (RDMA)** backing device based on real-time network conditions.
 
-## Overview
+---
 
-netCAS extends the OpenCAS caching framework to provide network-aware caching capabilities, allowing for intelligent cache placement and management based on network conditions and topology.
+## **Overview**
 
-## Open-CAS Variants
+Modern data centers often decouple application and storage nodes for scalability.
+While NVMe-oF provides high throughput over RDMA, its performance still fluctuates with network contention.
+netCAS extends OpenCAS to **adapt cache–backing split ratios at runtime**, ensuring optimal I/O throughput even under changing network conditions.
 
-This repository contains three variants of Open-CAS:
+**Key idea:**
+Instead of always hitting the cache, netCAS **splits each read I/O** between PMem and NVMe-oF according to:
+[
+\text{Optimal Split Ratio} = \frac{\text{IOPS}*{\text{cache}}}{\text{IOPS}*{\text{cache}} + \text{IOPS}_{\text{backing}}}
+]
+and dynamically adjusts it when RDMA bandwidth or latency degrades.
 
-1. **Vanilla Open-CAS** (`open-cas-linux/`) - The original unmodified OpenCAS Linux implementation
-2. **OrthusCAS (MF variant)** (`open-cas-linux-mf/`) - Modified version with multi-factor (MF) caching capabilities
-3. **NetCAS** (`open-cas-linux-netCAS/`) - Our network-aware caching implementation with advanced features for distributed caching
+---
 
-Each variant can be built and configured independently based on your caching requirements.
+## **Architecture**
 
-## Repository Structure
-
-- `open-cas-linux/` - Vanilla Open-CAS Linux kernel module
-- `open-cas-linux-mf/` - OrthusCAS (MF variant) implementation
-- `open-cas-linux-netCAS/` - NetCAS implementation with network-aware enhancements
-- `shell/` - Shell scripts for setup, teardown, and management of netCAS components
-- `test/` - Test files and utilities
-
-## Key Features
-
-- Network-aware cache placement
-- Dynamic cache mode switching based on network conditions
-- RDMA and NVMe-oF support
-- PMEM (Persistent Memory) integration
-- Advanced split ratio optimization
-
-## Getting Started
-
-### Prerequisites
-
-- Linux kernel headers
-- Build tools (make, gcc)
-- RDMA drivers (for RDMA functionality)
-- NVMe drivers (for NVMe-oF functionality)
-
-### Building and Setup
-
-You can build and set up any of the Open-CAS variants using the automated setup script:
-
-```bash
-# For Vanilla Open-CAS or NetCAS
-sudo ./shell/setup_opencas_pmem.sh
-
-# For OrthusCAS (MF variant)
-sudo ./shell/setup_opencas_pmem.sh mf
+```
+           ┌────────────────────────────┐
+           │       User Workload        │
+           └─────────────┬──────────────┘
+                         │
+               ┌─────────▼─────────┐
+               │     OpenCAS Core   │
+               │ (modified for netCAS)
+               └─────────┬─────────┘
+                         │
+     ┌───────────────────┴──────────────────────┐
+     │                                          │
+┌────▼────┐                              ┌──────▼─────┐
+│  PMem   │ ←── local cache device       │ NVMe-oF RDMA│ ← remote backing
+│  (cache)│                              │   device    │
+└─────────┘                              └─────────────┘
+     │                                          │
+     └──── netCAS Splitter  ← dynamic ratio ────┘
 ```
 
-The `setup_opencas_pmem.sh` script automatically:
-- Verifies PMEM and NVMe device availability
-- Creates cache instances using PMEM
-- Adds NVMe as the core device
-- Configures cache modes (including MF-specific modes for OrthusCAS)
+---
 
-#### Manual Building
+## **Key Components**
 
-Alternatively, you can manually build any variant:
+### **1. netCAS Splitter**
+
+* Kernel-space scheduler that decides per-I/O routing.
+* Supports both **Weighted Round Robin (WRR)** and **Random** modes.
+* Uses lookup tables (IOPS vs. IOdepth × Jobs) pre-collected from benchmarking.
+
+### **2. netCAS Monitor**
+
+* Hooks into the **NVMe-oF RDMA driver** to record:
+
+  * **Throughput (MB/s)**
+  * **Average latency (µs)**
+  * Exposed via `/sys/kernel/rdma_metrics/{throughput,latency}`
+* Feeds these values into the splitter every 0.1 s.
+
+### **3. Dynamic Split Ratio Logic**
+
+* Detects **network congestion** using moving averages of RDMA metrics.
+
+* Modes:
+
+  | Mode           | Description                             |
+  | -------------- | --------------------------------------- |
+  | **IDLE**       | No active traffic; default 100 % cache  |
+  | **WARMUP**     | Initial sampling window filling         |
+  | **STABLE**     | Steady state, ratio applied from lookup |
+  | **CONGESTION** | Detected BW/latency drop → recalc ratio |
+  | **FAILURE**    | Fallback on cache-only mode             |
+
+* Congestion detection thresholds (examples):
+
+  * Bandwidth drop ≥ 9 %
+  * Latency increase ≥ 7 %
+
+---
+
+## **Kernel-Level Modifications**
+
+### **In OpenCAS (`engine_fast.c`)**
+
+* Integrated `netcas_should_send_to_backend()` call inside the cache-hit path.
+* Splitter operates transparently regardless of the OpenCAS write policy (WT/WB/WO).
+
+### **In NVMe-oF RDMA driver**
+
+* Added performance probes in:
+
+  * `nvme_rdma_queue_rq()` → record request start time
+  * `nvme_rdma_complete_rq()` → calculate per-I/O latency and throughput
+* Aggregates per-second averages and exposes via sysfs for the monitor module.
+
+---
+
+## **Algorithm Summary**
+
+1. Measure standalone IOPS for cache and backend.
+2. Compute theoretical ratio:
+   [
+   r = \frac{A}{A + B}
+   ]
+3. Apply **Weighted RR**:
+
+   * Pattern-based (e.g., 4 × cache : 1 × backend for 80:20)
+   * Maintains both **short-term fairness** and **long-term ratio stability**
+4. Detect RDMA congestion and reduce backend weight dynamically.
+
+---
+
+## **Repository Layout**
+
+```
+open-cas-linux/           →  Vanilla OpenCAS kernel module
+open-cas-linux-mf/        →  OrthusCAS (Multi-Factor) variant
+open-cas-linux-netCAS/    →  NetCAS: network-aware variant (modified OpenCAS)
+shell/                    →  Setup & experiment scripts
+test/                     →  Test and benchmark tools
+```
+
+---
+
+## **Building**
 
 ```bash
-# Choose your variant
-cd open-cas-linux          # Vanilla
-# or
-cd open-cas-linux-mf       # OrthusCAS
-# or
-cd open-cas-linux-netCAS   # NetCAS
-
-# Build
+# Choose variant
+cd open-cas-linux-netCAS
 make
-
-# Install
 sudo make install
 ```
 
-## Usage
+### **Automated PMem + NVMe-oF setup**
 
-See the `shell/` directory for additional setup and management scripts:
+```bash
+sudo ./shell/setup_opencas_pmem.sh         # Vanilla / NetCAS
+sudo ./shell/setup_opencas_pmem.sh mf      # OrthusCAS variant
+```
 
-- `setup_opencas.sh` - Basic OpenCAS setup
-- `setup_opencas_pmem.sh` - Automated setup with PMEM support (supports all variants)
-- `setup_rdma.sh` - Setup with RDMA support
-- `connect-nvme.sh` - Connect to NVMe-oF targets
-- `connect-rdma.sh` - Connect to RDMA targets
+This script:
 
-## License
+* Detects PMem and NVMe devices
+* Creates OpenCAS instances
+* Connects to NVMe-oF targets (via RDMA)
+* Loads appropriate kernel modules
 
-This project is based on [OpenCAS](https://github.com/Open-CAS/open-cas-linux), which is licensed under the BSD 3-Clause License. See the LICENSE file in the `open-cas-linux/` directory for details.
+---
 
-## Contributing
+## **Runtime Monitoring**
 
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Submit a pull request
+```bash
+cat /sys/kernel/rdma_metrics/throughput   # MB/s
+cat /sys/kernel/rdma_metrics/latency      # µs
+dmesg | grep netCAS                       # Logs current mode and ratio
+```
 
-## Contact
+Sample kernel log output:
 
-For questions and contributions, please contact the netCAS development team.
+```
+netCAS: STABLE mode - Calculated split ratio: 82.35% (RDMA: 5120 MB/s, IOPS: 120K)
+netCAS: Mode changed from STABLE to CONGESTION (BW_Drop: 9%, Lat_Inc: 7%)
+```
 
-## Acknowledgments
+---
 
-This project is based on the OpenCAS project by Intel. We thank the OpenCAS community for their excellent work on the caching framework.
+## **Key Features Summary**
+
+* ✅ **Dynamic Split Ratio** based on real-time RDMA stats
+* ✅ **Weighted Round Robin & Random Splitter Modes**
+* ✅ **Zero user-space overhead (all in kernel)**
+* ✅ **PMem + NVMe-oF hybrid caching**
+* ✅ **Sysfs-based monitoring and logging**
+* ✅ **Congestion-aware adaptive I/O balancing**
+
+---
+
+## **Reference Implementations**
+
+* **OrthusCAS (FAST ’21)** — multi-factor caching baseline
+* **netCAS (FAST ’26 submission)** — network-aware adaptive extension
+
+---
+
+## **License**
+
+Based on OpenCAS (BSD 3-Clause License).
+See `open-cas-linux/LICENSE`.
+
+---
+
+## **Acknowledgments**
+
+* OpenCAS community (Intel, WDC, et al.) for the base caching framework
+* UCLA Networking Systems Lab for guidance and testbed infrastructure
+
+---
