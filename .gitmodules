@@ -6,4 +6,4 @@
 	url = https://github.com/Open-CAS/open-cas-linux.git
 [submodule "open-cas-linux-netCAS"]
 	path = open-cas-linux-netCAS
-	url = https://github.com/netCAS-SKKU/open-cas-linux-netCAS.git
+	url = https://github.com/netcas-anon-research/open-cas-linux-netCAS.git
